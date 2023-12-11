@@ -102,7 +102,29 @@ cron.schedule('*/10 * * * * *', async () => {
 
 // 定义更新玩家 NFT 表的 API 接口
 app.post('/api/update_player_nft', async (req, res) => {
-    // API 逻辑...
+    try {
+        // 从请求体中获取数据
+        const { playerID, nftContractAddress, tokenID } = req.body;
+
+        // 查找或创建新的 PlayerNFT 记录
+        let playerNFT = await PlayerNFT.findOne({ PlayerID: playerID, TokenID: tokenID });
+        if (!playerNFT) {
+            playerNFT = new PlayerNFT({ PlayerID: playerID, NFTContractAddress: nftContractAddress, TokenID: tokenID });
+        } else {
+            // 更新现有记录的信息（如果需要）
+            playerNFT.NFTContractAddress = nftContractAddress;
+        }
+
+        // 保存记录到数据库
+        await playerNFT.save();
+
+        // 返回成功响应
+        res.status(200).json({ message: 'Player NFT updated successfully', playerNFT });
+    } catch (error) {
+        // 错误处理
+        console.error('Error updating player NFT:', error);
+        res.status(500).json({ message: 'Error updating player NFT', error: error.message });
+    }
 });
 
 // 设置静态文件目录

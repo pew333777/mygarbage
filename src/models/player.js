@@ -21,5 +21,11 @@ const playerSchema = new mongoose.Schema({
     },
     // 您可以在此处添加更多字段
 });
+const Player = mongoose.model('Player', playerSchema);
+
+// 添加一个获取所有玩家的函数
+const getAllPlayers = async () => {
+    return await Player.find({});
+};
 
 module.exports = mongoose.model('Player', playerSchema);

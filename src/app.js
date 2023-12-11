@@ -64,7 +64,40 @@ nftContract.events.Transfer({
 // 使用 cron 每 10 秒更新一次数据库
 cron.schedule('*/10 * * * * *', async () => {
     console.log('Updating database...');
-    // 实现定期更新数据库的逻辑...
+
+    try {
+        // 获取所有玩家
+        const players = await getAllPlayers();
+
+        // 假设您有一个函数来获取所有玩家的 NFT
+        const allNFTs = await getAllNFTsFromBlockchain();
+
+        // 更新每个玩家的 NFT 信息
+        for (const nft of allNFTs) {
+            const { owner, tokenId } = nft;
+
+            // 检查数据库中是否已有此 NFT
+            const existingNFT = await PlayerNFT.findOne({ TokenID: tokenId });
+
+            if (!existingNFT) {
+                // 如果数据库中没有这个 NFT，则添加它
+                const newPlayerNFT = new PlayerNFT({
+                    PlayerID: owner,
+                    NFTContractAddress: nftContract.options.address,
+                    TokenID: tokenId
+                });
+                await newPlayerNFT.save();
+            } else {
+                // 如果数据库中有这个 NFT，可以更新相关信息
+                existingNFT.PlayerID = owner;
+                await existingNFT.save();
+            }
+        }
+    } catch (error) {
+        console.error('Error updating database:', error);
+    }
+
+    console.log('Database updated');
 });
 
 // 定义更新玩家 NFT 表的 API 接口

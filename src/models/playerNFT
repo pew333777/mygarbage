@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-
+const PlayerNFT = mongoose.model('PlayerNFT', playerNFTSchema);
 const playerNFTSchema = new mongoose.Schema({
     PlayerNFTID: {
         type: Number,

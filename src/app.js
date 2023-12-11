@@ -1,4 +1,4 @@
-// 引入必要的模块
+// 引入必要的模組
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
@@ -9,25 +9,25 @@ const { jwtAuthMiddleware } = require('./utils/jwtUtils');
 const playerRoutes = require('./routes/api');
 const PlayerNFT = require('./models/playerNFT'); // 确保引入 PlayerNFT 模型
 
-// 初始化环境变量
+// 初始化環境參數
 dotenv.config();
 
-// 初始化 Express 应用
+// 初始化 Express 應用
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// 连接 MongoDB 数据库
+// 連接 MongoDB 資料库
 mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 mongoose.connection.on('error', (error) => console.error(error));
 mongoose.connection.once('open', () => console.log('Connected to database'));
 
-// 设置 Web3 提供程序
+// 設置 Web3 提供程式
 const providerUrl = process.env.PROVIDER_URL || 'mongodb://localhost:27017/account';
 const web3 = new Web3(new Web3.providers.HttpProvider(providerUrl));
 const nftContract = new web3.eth.Contract(/* 合约ABI */, /* 合约地址 */);
 
-// 监听 Transfer 事件
+// 監聽 Transfer 事件
 nftContract.events.Transfer({
     fromBlock: 'latest'
 })
@@ -35,10 +35,10 @@ nftContract.events.Transfer({
     console.log('Transfer event:', event);
     const { from, to, tokenId } = event.returnValues;
 
-    // 检查 'to' 地址是否是我们的用户
+    // 檢查 'to' 地址是否是我們的玩家
     const player = await Player.findOne({ walletAddress: to });
     if (player) {
-        // 玩家获得了 NFT，更新数据库
+        // 玩家獲得了 NFT，更新資料庫
         const newPlayerNFT = new PlayerNFT({
             PlayerID: player._id,
             NFTContractAddress: nftContract.options.address,
@@ -47,8 +47,8 @@ nftContract.events.Transfer({
         await newPlayerNFT.save();
     }
 
-    // 处理发送者 (from 地址) 失去了 NFT
-    if (from !== '0x0000000000000000000000000000000000000000') { // 检查是否不是创造性的转移
+    // 處裡發送者 (from 地址) 失去了 NFT
+    if (from !== '0x0000000000000000000000000000000000000000') { //檢查是否不是創造性的轉移
         const sender = await Player.findOne({ walletAddress: from });
         if (sender) {
             await PlayerNFT.findOneAndRemove({
@@ -61,26 +61,26 @@ nftContract.events.Transfer({
 })
 .on('error', console.error);
 
-// 使用 cron 每 10 秒更新一次数据库
+// 使用 cron 每 10 秒更新一次資料库
 cron.schedule('*/10 * * * * *', async () => {
     console.log('Updating database...');
 
     try {
-        // 获取所有玩家
+        // 擷取所有玩家
         const players = await getAllPlayers();
 
-        // 假设您有一个函数来获取所有玩家的 NFT
+        // 所有玩家的 NFT
         const allNFTs = await getAllNFTsFromBlockchain();
 
-        // 更新每个玩家的 NFT 信息
+        // 更新每个玩家的 NFT 資料
         for (const nft of allNFTs) {
             const { owner, tokenId } = nft;
 
-            // 检查数据库中是否已有此 NFT
+            // 檢查資料庫中是否已有此 NFT
             const existingNFT = await PlayerNFT.findOne({ TokenID: tokenId });
 
             if (!existingNFT) {
-                // 如果数据库中没有这个 NFT，则添加它
+                // 如果資料庫中没有這個 NFT，則添加它
                 const newPlayerNFT = new PlayerNFT({
                     PlayerID: owner,
                     NFTContractAddress: nftContract.options.address,
@@ -88,7 +88,7 @@ cron.schedule('*/10 * * * * *', async () => {
                 });
                 await newPlayerNFT.save();
             } else {
-                // 如果数据库中有这个 NFT，可以更新相关信息
+                // 如果資料庫中有這個 NFT，可以更新相關資料
                 existingNFT.PlayerID = owner;
                 await existingNFT.save();
             }
@@ -100,48 +100,48 @@ cron.schedule('*/10 * * * * *', async () => {
     console.log('Database updated');
 });
 
-// 定义更新玩家 NFT 表的 API 接口
+// 定義更新玩家 NFT 表的 API 介面
 app.post('/api/update_player_nft', async (req, res) => {
     try {
-        // 从请求体中获取数据
+        // 從請求體中獲取數據
         const { playerID, nftContractAddress, tokenID } = req.body;
 
-        // 查找或创建新的 PlayerNFT 记录
+        // 查找或創建新的 PlayerNFT 記錄
         let playerNFT = await PlayerNFT.findOne({ PlayerID: playerID, TokenID: tokenID });
         if (!playerNFT) {
             playerNFT = new PlayerNFT({ PlayerID: playerID, NFTContractAddress: nftContractAddress, TokenID: tokenID });
         } else {
-            // 更新现有记录的信息（如果需要）
+            // 更新現有記錄的資訊（如果需要）
             playerNFT.NFTContractAddress = nftContractAddress;
         }
 
-        // 保存记录到数据库
+        // 保存記錄到資料庫
         await playerNFT.save();
 
-        // 返回成功响应
+        // 返回成功回應
         res.status(200).json({ message: 'Player NFT updated successfully', playerNFT });
     } catch (error) {
-        // 错误处理
+        //   錯誤處理
         console.error('Error updating player NFT:', error);
         res.status(500).json({ message: 'Error updating player NFT', error: error.message });
     }
 });
 
-// 设置静态文件目录
+// 設置靜態文件目錄
 app.use(express.static('public'));
 
 // 使用路由
 app.use('/api', playerRoutes);
 
-// 定义根路由
+// 定義根路由
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
-// 使用 JWT 中间件保护路由
+// 使用 JWT 中間件保護路由
 app.use(jwtAuthMiddleware);
 
-// 启动 Express 服务器
+//  啟動 Express 伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
     console.log(`Server listening on port ${port}`);

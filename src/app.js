@@ -8,7 +8,7 @@ const cron = require('node-cron');
 const { jwtAuthMiddleware } = require('./utils/jwtUtils');
 const playerRoutes = require('./routes/api');
 const PlayerNFT = require('./models/playerNFT'); // 確保引入 PlayerNFT 模型
-const nftContractABI = require('..config/nftContractABI');
+const nftContractABI = require('./config/nftContractABI');
 const nftContractAddress = process.env.NFT_CONTRACT_ADDRESS;
 
 

@@ -7,7 +7,10 @@ const Web3 = require('web3');
 const cron = require('node-cron');
 const { jwtAuthMiddleware } = require('./utils/jwtUtils');
 const playerRoutes = require('./routes/api');
-const PlayerNFT = require('./models/playerNFT'); // 确保引入 PlayerNFT 模型
+const PlayerNFT = require('./models/playerNFT'); // 確保引入 PlayerNFT 模型
+const nftContractABI = require('..config/nftContractABI');
+const nftContractAddress = process.env.NFT_CONTRACT_ADDRESS;
+
 
 // 初始化環境參數
 dotenv.config();
@@ -23,9 +26,9 @@ mongoose.connection.on('error', (error) => console.error(error));
 mongoose.connection.once('open', () => console.log('Connected to database'));
 
 // 設置 Web3 提供程式
-const providerUrl = process.env.PROVIDER_URL || 'mongodb://localhost:27017/account';
+const providerUrl = process.env.PROVIDER_URL || 'https://goerli.infura.io/v3/dd5f558c605f4322a16f6496c0bc7f3c';
 const web3 = new Web3(new Web3.providers.HttpProvider(providerUrl));
-const nftContract = new web3.eth.Contract(/* 合约ABI */, /* 合约地址 */);
+const nftContract = new web3.eth.Contract(nftContractABI,nftContractAddress);
 
 // 監聽 Transfer 事件
 nftContract.events.Transfer({
@@ -47,7 +50,7 @@ nftContract.events.Transfer({
         await newPlayerNFT.save();
     }
 
-    // 處裡發送者 (from 地址) 失去了 NFT
+    // 處理發送者 (from 地址) 失去了 NFT
     if (from !== '0x0000000000000000000000000000000000000000') { //檢查是否不是創造性的轉移
         const sender = await Player.findOne({ walletAddress: from });
         if (sender) {

@@ -1,209 +1,156 @@
+// 引入必要的模組
 const express = require('express');
-const { check, validationResult } = require('express-validator');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const Player = require('../models/player');
-const PlayerNFT = require('../models/playerNFT');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
 const Web3 = require('web3');
-const nftContractAddress = '您的智能合约地址'; // 替換為您的智能合约地址
-const nftContract = require('../path/to/your/nftContract'); // 替換為智能合约的實際路徑
+const cron = require('node-cron');
+const { jwtAuthMiddleware } = require('./utils/jwtUtils');
+const playerRoutes = require('./routes/api');
+const PlayerNFT = require('./models/playerNFT'); // 確保引入 PlayerNFT 模型
+const nftContractABI = require('..config/nftContractABI');
+const nftContractAddress = process.env.NFT_CONTRACT_ADDRESS;
 
-const router = express.Router();
 
-// 定義註冊路由
-router.post(
-    '/register',
-    [
-      // 使用 express-validator 中間件對輸入進行驗證
-      check('email').isEmail().withMessage('無效的電子郵件'), // 驗證電子郵件格式
-      check('password').isLength({ min: 6 }).withMessage('密碼至少需6個字符長'), // 驗證密碼長度
-      check('nickname').notEmpty().withMessage('昵稱為必填') // 驗證昵稱是否提供
-    ],
-    async (req, res) => {
-      // 驗證請求數據
-      const errors = validationResult(req);
-      // 如果驗證失敗，返回錯誤信息
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: errors.array()[0].msg });
-      }
+// 初始化環境參數
+dotenv.config();
 
-      // 從請求體中提取 email, password 和 nickname
-      const { email, password, nickname } = req.body;
-      try {
-        // 檢查資料庫中是否已有相同電子郵件的用戶
-        const userExists = await Player.findOne({ email });
-        if (userExists) {
-          // 如果用戶已存在，返回錯誤響應
-          return res.status(400).json({ success: false, message: '該電子郵件已被註冊' });
-        }
+// 初始化 Express 應用
+const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
-        // 對密碼進行哈希處理
-        const hashedPassword = await bcrypt.hash(password, 10);
-        // 創建新用戶
-        const player = await Player.create({
-          email,
-          password: hashedPassword,
-          nickname
+// 連接 MongoDB 資料库
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connection.on('error', (error) => console.error(error));
+mongoose.connection.once('open', () => console.log('Connected to database'));
+
+// 設置 Web3 提供程式
+const providerUrl = process.env.PROVIDER_URL || 'https://goerli.infura.io/v3/dd5f558c605f4322a16f6496c0bc7f3c';
+const web3 = new Web3(new Web3.providers.HttpProvider(providerUrl));
+const nftContract = new web3.eth.Contract(nftContractABI,nftContractAddress);
+
+// 監聽 Transfer 事件
+nftContract.events.Transfer({
+    fromBlock: 'latest'
+})
+.on('data', async (event) => {
+    console.log('Transfer event:', event);
+    const { from, to, tokenId } = event.returnValues;
+
+    // 檢查 'to' 地址是否是我們的玩家
+    const player = await Player.findOne({ walletAddress: to });
+    if (player) {
+        // 玩家獲得了 NFT，更新資料庫
+        const newPlayerNFT = new PlayerNFT({
+            PlayerID: player._id,
+            NFTContractAddress: nftContract.options.address,
+            TokenID: tokenId
         });
-        // 返回成功響應
-        res.json({ success: true, message: '玩家註冊成功' });
-      } catch (error) {
-        // 捕獲並處理任何異常，返回錯誤響應
-        res.status(400).json({ success: false, message: error.message });
-      }
+        await newPlayerNFT.save();
     }
-  );
 
-// 定義登錄路由
-router.post(
-    '/login',
-    [
-      // 對請求進行驗證
-      check('email').isEmail().withMessage('無效的電子郵件'), // 驗證電子郵件格式
-      check('password').notEmpty().withMessage('密碼為必填') // 確保密碼欄位被填寫
-    ],
-    async (req, res) => {
-      // 檢查驗證結果
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        // 如果有驗證錯誤，返回錯誤信息
-        return res.status(400).json({ success: false, message: errors.array()[0].msg });
-      }
-
-      // 從請求體中提取 email 和 password
-      const { email, password } = req.body;
-      try {
-        // 檢查用戶是否存在
-        const player = await Player.findOne({ email });
-        if (!player) {
-          // 如果找不到用戶，返回錯誤信息
-          return res.status(400).json({ success: false, message: '無效的電子郵件或密碼' });
-        }
-
-        // 驗證密碼是否正確
-        const isMatch = await bcrypt.compare(password, player.password);
-        if (!isMatch) {
-          // 如果密碼不匹配，返回錯誤信息
-          return res.status(400).json({ success: false, message: '無效的電子郵件或密碼' });
-        }
-
-        // 生成 JWT 令牌
-        const token = jwt.sign({ playerId: player._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-        // 返回成功信息及令牌
-        res.json({ success: true, message: '玩家成功登入', token });
-      } catch (error) {
-        // 發生錯誤，返回錯誤信息
-        res.status(400).json({ success: false, message: error.message });
-      }
-    }
-  );
-
-
-// 卡片出售功能的實現
-    router.post('/sell', async (req, res) => {
-        const { sellerId, cardId, price } = req.body;
-
-        try {
-            // 查詢賣家和卡牌信息
-            const seller = await Player.findById(sellerId);
-            const card = await Card.findById(cardId);
-
-            if (!seller) {
-                return res.status(404).json({
-                    success: false,
-                    message: '賣家不存在！'
-                });
-            }
-
-            if (!card) {
-                return res.status(404).json({
-                    success: false,
-                    message: '卡牌不存在！'
-                });
-            }
-
-            // 判斷賣家是否擁有該卡牌
-            const playerNFT = await PlayerNFT.findOne({
-                PlayerID: sellerId,
-                TokenID: card.tokenId
+    // 處理發送者 (from 地址) 失去了 NFT
+    if (from !== '0x0000000000000000000000000000000000000000') { //檢查是否不是創造性的轉移
+        const sender = await Player.findOne({ walletAddress: from });
+        if (sender) {
+            await PlayerNFT.findOneAndRemove({
+                PlayerID: sender._id,
+                NFTContractAddress: nftContract.options.address,
+                TokenID: tokenId
             });
+        }
+    }
+})
+.on('error', console.error);
 
-            if (!playerNFT) {
-                return res.status(400).json({
-                    success: false,
-                    message: '賣家未擁有該卡牌！'
+// 使用 cron 每 10 秒更新一次資料库
+cron.schedule('*/10 * * * * *', async () => {
+    console.log('Updating database...');
+
+    try {
+        // 擷取所有玩家
+        const players = await getAllPlayers();
+
+        // 所有玩家的 NFT
+        const allNFTs = await getAllNFTsFromBlockchain();
+
+        // 更新每个玩家的 NFT 資料
+        for (const nft of allNFTs) {
+            const { owner, tokenId } = nft;
+
+            // 檢查資料庫中是否已有此 NFT
+            const existingNFT = await PlayerNFT.findOne({ TokenID: tokenId });
+
+            if (!existingNFT) {
+                // 如果資料庫中没有這個 NFT，則添加它
+                const newPlayerNFT = new PlayerNFT({
+                    PlayerID: owner,
+                    NFTContractAddress: nftContract.options.address,
+                    TokenID: tokenId
                 });
+                await newPlayerNFT.save();
+            } else {
+                // 如果資料庫中有這個 NFT，可以更新相關資料
+                existingNFT.PlayerID = owner;
+                await existingNFT.save();
             }
+        }
+    } catch (error) {
+        console.error('Error updating database:', error);
+    }
 
-            // 更新玩家NFT表，將卡牌轉移給智能合約地址
+    console.log('Database updated');
+});
+
+// 定義更新玩家 NFT 表的 API 介面
+app.post('/api/update_player_nft', async (req, res) => {
+    try {
+        // 從請求體中獲取數據
+        const { playerID, nftContractAddress, tokenID } = req.body;
+
+        // 查找或創建新的 PlayerNFT 記錄
+        let playerNFT = await PlayerNFT.findOne({ PlayerID: playerID, TokenID: tokenID });
+        if (!playerNFT) {
+            playerNFT = new PlayerNFT({ PlayerID: playerID, NFTContractAddress: nftContractAddress, TokenID: tokenID });
+        } else {
+            // 更新現有記錄的資訊（如果需要）
             playerNFT.NFTContractAddress = nftContractAddress;
-            await playerNFT.save();
-
-            // 觸發智能合約的卡牌出售函數
-            await contract.sellCard(card.tokenId, price);
-
-            return res.json({
-                success: true,
-                message: '卡牌出售成功！'
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: '處理卡牌出售時發生錯誤',
-                error: error.message
-            });
         }
-    });
 
+        // 保存記錄到資料庫
+        await playerNFT.save();
 
-// 抽卡功能的 API 端口
-    router.post('/draw_card', async (req, res) => {
-        const { playerId } = req.body;
+        // 返回成功回應
+        res.status(200).json({ message: 'Player NFT updated successfully', playerNFT });
+    } catch (error) {
+        //   錯誤處理
+        console.error('Error updating player NFT:', error);
+        res.status(500).json({ message: 'Error updating player NFT', error: error.message });
+    }
+});
 
-        try {
-            // 查詢玩家信息
-            const player = await Player.findById(playerId);
+// 設置靜態文件目錄
+app.use(express.static('public'));
 
-            if (!player) {
-                return res.status(404).json({
-                    success: false,
-                    message: '玩家不存在！'
-                });
-            }
+// 使用路由
+app.use('/api', playerRoutes);
 
-            // 從智能合約抽取卡牌
-            const accounts = await web3.eth.getAccounts();
-            const drawCardMethod = nftContract.methods.drawCard();
-            const gas = await drawCardMethod.estimateGas({ from: accounts[0] });
-            const drawnCardTokenId = await drawCardMethod.call({ from: accounts[0], gas: gas });
+// 定義根路由
+app.get('/', (req, res) => {
+    res.send('Hello World!');
+});
 
-            // 將抽取的卡牌添加到玩家的 NFT 表中
-            const newPlayerNFT = new PlayerNFT({
-                PlayerNFTID: Date.now(), // 可以使用其他生成唯一ID的方法
-                PlayerID: playerId,
-                NFTContractAddress: nftContractAddress,
-                TokenID: drawnCardTokenId,
-            });
+// 使用 JWT 中間件保護路由
+app.use(jwtAuthMiddleware);
 
-            await newPlayerNFT.save();
+//  啟動 Express 伺服器
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+    console.log(`Server listening on port ${port}`);
+});
 
-            // 返回成功消息和卡牌信息
-            res.json({
-                success: true,
-                message: '卡牌抽取成功！',
-                card: {
-                    tokenId: drawnCardTokenId
-                }
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: '無法抽取卡牌',
-                error: error.message
-            });
-        }
-    });
+module.exports = app;
 
 
 module.exports = router;

@@ -1,7 +1,7 @@
 // src/models/playerNFT.js
 const mongoose = require('mongoose');
 const Web3 = require('web3');
-const nftContractABI = require('../path/to/nftContractABI.json');
+const nftContractABI = require('../../config/nftContractABI.json');
 const nftContractAddress = '0x...'; // 智能合约地址
 
 const web3 = new Web3(new Web3.providers.HttpProvider('http://localhost:8545'));
